@@ -128,27 +128,36 @@ def get_game_id(pin: str) -> str:
     # ── Method 1: Look for game ID fields in the JSON body ────────────────
     # Check top-level fields first (modern Kahoot API returns liveGameId here)
     for field in ("liveGameId", "uuid", "quizId", "gameId", "kahootId"):
-        if data.get(field):
-            game_id = str(data[field])
+        candidate = str(data[field]) if data.get(field) else None
+        if candidate and UUID_PATTERN.fullmatch(candidate):
+            game_id = candidate
             break
 
     # Also check nested under "kahoot" key (older API format)
     if not game_id and "kahoot" in data and isinstance(data["kahoot"], dict):
-        game_id = (
-            data["kahoot"].get("uuid")
-            or data["kahoot"].get("quizId")
-            or data["kahoot"].get("gameId")
-        )
+        for raw in (
+            data["kahoot"].get("uuid"),
+            data["kahoot"].get("quizId"),
+            data["kahoot"].get("gameId"),
+        ):
+            candidate = str(raw) if raw is not None else None
+            if candidate and UUID_PATTERN.fullmatch(candidate):
+                game_id = candidate
+                break
 
     # ── Method 2: Decode the session token (base64 JSON) ─────────────────
     if not game_id and session_token:
         token_data = _try_decode_token(session_token)
-        game_id = (
-            token_data.get("uuid")
-            or token_data.get("quizId")
-            or token_data.get("gameId")
-            or token_data.get("kahootId")
-        )
+        for raw in (
+            token_data.get("uuid"),
+            token_data.get("quizId"),
+            token_data.get("gameId"),
+            token_data.get("kahootId"),
+        ):
+            candidate = str(raw) if raw is not None else None
+            if candidate and UUID_PATTERN.fullmatch(candidate):
+                game_id = candidate
+                break
 
     # ── Method 3: Solve challenge → XOR-decode token → scan for UUID ─────
     if not game_id and session_token and "challenge" in data:
