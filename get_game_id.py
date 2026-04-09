@@ -125,8 +125,15 @@ def get_game_id(pin: str) -> str:
 
     game_id = None
 
-    # ── Method 1: UUID directly in the JSON body ──────────────────────────
-    if "kahoot" in data and isinstance(data["kahoot"], dict):
+    # ── Method 1: Look for game ID fields in the JSON body ────────────────
+    # Check top-level fields first (modern Kahoot API returns liveGameId here)
+    for field in ("liveGameId", "uuid", "quizId", "gameId", "kahootId"):
+        if data.get(field):
+            game_id = str(data[field])
+            break
+
+    # Also check nested under "kahoot" key (older API format)
+    if not game_id and "kahoot" in data and isinstance(data["kahoot"], dict):
         game_id = (
             data["kahoot"].get("uuid")
             or data["kahoot"].get("quizId")
