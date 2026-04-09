@@ -2,6 +2,7 @@
 Kahoot Game ID Getter
 Given a Kahoot PIN, retrieves the internal game/quiz UUID by querying
 the Kahoot session API — the same endpoint a host's browser calls.
+Also prints all available session info sorted and labelled.
 """
 
 from __future__ import annotations
@@ -34,6 +35,35 @@ UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
 )
+
+# Human-readable labels for well-known API fields
+_FIELD_LABELS: dict[str, str] = {
+    "live_game_id":          "Live Game ID",
+    "pin":                   "Game PIN",
+    "title":                 "Quiz Title",
+    "description":           "Quiz Description",
+    "quiz_type":             "Quiz Type",
+    "language":              "Language",
+    "creator":               "Creator",
+    "creator_username":      "Creator Username",
+    "number_of_questions":   "Number of Questions",
+    "player_count":          "Current Player Count",
+    "game_mode":             "Game Mode",
+    "team_mode":             "Team Mode",
+    "two_factor_auth":       "Two-Factor Auth",
+    "show_nicknames":        "Show Nicknames",
+    "cooperative":           "Cooperative Mode",
+    "points_enabled":        "Points Enabled",
+    "time_limit_enabled":    "Time Limit Enabled",
+    "cover":                 "Cover Image",
+    "visibility":            "Visibility",
+    "audience":              "Audience",
+    "difficulty":            "Difficulty",
+    "tags":                  "Tags",
+    "created":               "Created At",
+    "modified":              "Last Modified",
+    "status":                "Game Status",
+}
 
 
 def _try_decode_token(token: str) -> dict:
@@ -89,11 +119,12 @@ def _xor_decode(token: str, challenge_answer: str) -> str:
     return result.decode("utf-8", errors="replace")
 
 
-def get_game_id(pin: str) -> str:
+def get_game_info(pin: str) -> tuple[str, dict]:
     """
-    Retrieve the Kahoot game (quiz) UUID for the given PIN.
+    Retrieve the Kahoot game (quiz) UUID and full session data for the given PIN.
 
-    Returns the UUID string, or raises SystemExit on failure.
+    Returns (game_id, data) where data is the parsed JSON from the API response,
+    or raises SystemExit on failure.
     """
     timestamp = int(time.time() * 1000)
     url = KAHOOT_SESSION_URL.format(pin, timestamp)
@@ -180,15 +211,132 @@ def get_game_id(pin: str) -> str:
         print(f"Session token present: {bool(session_token)}")
         sys.exit(1)
 
-    return game_id
+    return game_id, data
 
 
-def write_github_output(key: str, value: str) -> None:
-    """Write a key=value pair to $GITHUB_OUTPUT (GitHub Actions output file)."""
+def _collect_session_info(pin: str, game_id: str, data: dict) -> dict[str, str]:
+    """
+    Harvest all interesting, human-readable fields from the API response dict.
+
+    Returns an ordered dict mapping internal key → string value, with the
+    live game id placed first.
+    """
+    info: dict[str, str] = {}
+
+    # Always-present fields
+    info["live_game_id"] = game_id
+    info["pin"] = pin
+
+    # Helper to safely pull a value and stringify it
+    def _get(d: dict, *keys: str) -> str | None:
+        for k in keys:
+            v = d.get(k)
+            if v is not None and v != "":
+                return str(v)
+        return None
+
+    # Top-level fields
+    for src_key, info_key in (
+        ("status",              "status"),
+        ("playerCount",         "player_count"),
+        ("twoFactorAuth",       "two_factor_auth"),
+    ):
+        v = _get(data, src_key)
+        if v is not None:
+            info[info_key] = v
+
+    # "kahoot" sub-object (quiz metadata)
+    kahoot = data.get("kahoot") if isinstance(data.get("kahoot"), dict) else {}
+    for src_key, info_key in (
+        ("title",               "title"),
+        ("description",         "description"),
+        ("quizType",            "quiz_type"),
+        ("type",                "quiz_type"),
+        ("language",            "language"),
+        ("creator",             "creator"),
+        ("creatorUsername",     "creator_username"),
+        ("numberOfQuestions",   "number_of_questions"),
+        ("cover",               "cover"),
+        ("visibility",          "visibility"),
+        ("audience",            "audience"),
+        ("difficulty",          "difficulty"),
+        ("created",             "created"),
+        ("modified",            "modified"),
+    ):
+        v = _get(kahoot, src_key)
+        if v is not None and info_key not in info:
+            info[info_key] = v
+
+    # Also check top-level for the same quiz fields (some API versions return them there)
+    for src_key, info_key in (
+        ("title",               "title"),
+        ("quizType",            "quiz_type"),
+        ("type",                "quiz_type"),
+        ("language",            "language"),
+        ("numberOfQuestions",   "number_of_questions"),
+        ("visibility",          "visibility"),
+        ("audience",            "audience"),
+        ("difficulty",          "difficulty"),
+        ("created",             "created"),
+        ("modified",            "modified"),
+    ):
+        v = _get(data, src_key)
+        if v is not None and info_key not in info:
+            info[info_key] = v
+
+    # tags (list → comma-separated)
+    raw_tags = kahoot.get("tags") or data.get("tags")
+    if isinstance(raw_tags, list) and raw_tags:
+        info["tags"] = ", ".join(str(t) for t in raw_tags)
+    elif isinstance(raw_tags, str) and raw_tags:
+        info["tags"] = raw_tags
+
+    # gameOptions sub-object
+    game_options = data.get("gameOptions")
+    if not isinstance(game_options, dict):
+        game_options = kahoot.get("gameOptions") or {}
+    if isinstance(game_options, dict):
+        for src_key, info_key in (
+            ("isTeamGame",          "team_mode"),
+            ("cooperative",         "cooperative"),
+            ("showNicknames",       "show_nicknames"),
+            ("pointsEnabled",       "points_enabled"),
+            ("timeLimitEnabled",    "time_limit_enabled"),
+            ("gameMode",            "game_mode"),
+        ):
+            v = _get(game_options, src_key)
+            if v is not None:
+                info[info_key] = v
+
+    return info
+
+
+def _print_session_info(info: dict[str, str]) -> None:
+    """Print all session info sorted and labelled in a neat table."""
+    # live_game_id and pin always come first; everything else is alphabetical
+    priority = ["live_game_id", "pin"]
+    ordered_keys = priority + sorted(k for k in info if k not in priority)
+
+    col_width = max(len(_FIELD_LABELS.get(k, k)) for k in ordered_keys)
+
+    print()
+    print("=" * (col_width + 4 + 40))
+    print("  Kahoot Session Info")
+    print("=" * (col_width + 4 + 40))
+    for key in ordered_keys:
+        label = _FIELD_LABELS.get(key, key.replace("_", " ").title())
+        value = info[key]
+        print(f"  {label:<{col_width}}  {value}")
+    print("=" * (col_width + 4 + 40))
+
+
+def write_github_output(info: dict[str, str]) -> None:
+    """Write all collected info as key=value pairs to $GITHUB_OUTPUT."""
     github_output = os.environ.get("GITHUB_OUTPUT", "")
     if github_output:
         with open(github_output, "a") as fh:
-            fh.write(f"{key}={value}\n")
+            for key, value in info.items():
+                fh.write(f"{key}={value}\n")
 
 
 def main() -> None:
@@ -202,11 +350,13 @@ def main() -> None:
         print(f"[ERROR] '{pin}' does not look like a valid Kahoot PIN (4–10 digits).")
         sys.exit(1)
 
-    print(f"Looking up game ID for PIN: {pin} ...")
-    game_id = get_game_id(pin)
+    print(f"Looking up game info for PIN: {pin} ...")
+    game_id, data = get_game_info(pin)
 
+    info = _collect_session_info(pin, game_id, data)
+    _print_session_info(info)
     print(f"\n✅ Game ID: {game_id}")
-    write_github_output("game_id", game_id)
+    write_github_output(info)
 
 
 if __name__ == "__main__":
