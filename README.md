@@ -41,7 +41,30 @@ Example:
 
 ```
 $ python get_game_id.py 1234567
-Looking up game ID for PIN: 1234567 ...
+Looking up game info for PIN: 1234567 ...
+
+=================================================================
+  Kahoot Session Info
+=================================================================
+  Live Game ID           a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  Game PIN               1234567
+  Cooperative Mode       False
+  Created At             2024-01-15T10:30:00.000Z
+  Creator Username       quizmaster42
+  Current Player Count   0
+  Difficulty             3
+  Game Mode              classic
+  Game Status            active
+  Language               English
+  Last Modified          2024-03-20T08:00:00.000Z
+  Number of Questions    10
+  Points Enabled         True
+  Quiz Title             My Awesome Quiz
+  Quiz Type              quiz
+  Team Mode              False
+  Two-Factor Auth        False
+  Visibility             public
+=================================================================
 
 ✅ Game ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 ```
