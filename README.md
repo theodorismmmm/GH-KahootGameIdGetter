@@ -71,9 +71,26 @@ Looking up game info for PIN: 1234567 ...
 
 ---
 
+## Web Version
+
+A Flask web app lives in the `web/` directory (see the `web-version` branch).
+It provides a browser UI where you type a PIN and the page converts the UUID
+returned by the Kahoot API into the canonical Game ID.
+
+```bash
+cd web
+pip install -r requirements.txt
+python app.py          # visit http://localhost:5000
+```
+
+---
+
 ## Files
 
 | File | Description |
 |------|-------------|
 | `get_game_id.py` | Python script – queries the Kahoot session API and extracts the game UUID |
 | `.github/workflows/get-kahoot-game-id.yml` | GitHub Actions workflow – runs the script via `workflow_dispatch` |
+| `web/app.py` | Flask backend – proxies the Kahoot API and converts UUID → Game ID |
+| `web/templates/index.html` | Browser frontend – PIN form + Game ID display |
+| `web/requirements.txt` | Python dependencies for the web app |
