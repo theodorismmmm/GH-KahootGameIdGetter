@@ -1,0 +1,40 @@
+name: Get Kahoot Game ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: "Kahoot game PIN (the code players use to join)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  get-game-id:
+    name: Retrieve Game ID from PIN
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Get Game ID
+        id: get_game_id
+        run: python get_game_id.py "${{ inputs.pin }}"
+
+      - name: Print Game ID
+        run: |
+          echo "================================================"
+          echo "  Kahoot PIN  : ${{ inputs.pin }}"
+          echo "  Game ID     : ${{ steps.get_game_id.outputs.game_id }}"
+          echo "================================================"
